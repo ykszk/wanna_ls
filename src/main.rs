@@ -25,22 +25,36 @@ fn core() -> Result<()> {
     let args = Args::parse();
 
     // Check filesystem type
-    let output = Command::new("stat")
-        .arg("--file-system")
-        .arg("--format=%T")
-        .arg(args.dir.as_path())
-        .output()
-        .expect("failed to call `stat` command");
-    if !output.status.success() {
-        bail!(
-            "Failed to get filesystem type: {}",
-            String::from_utf8(output.stderr)?
-        );
+    #[cfg(not(target_os = "macos"))]
+    {
+        let output = Command::new("stat")
+            .arg("--file-system")
+            .arg("--format=%T")
+            .arg(args.dir.as_path())
+            .output()
+            .expect("failed to call `stat` command");
+        if !output.status.success() {
+            bail!(
+                "Failed to get filesystem type: {}",
+                String::from_utf8(output.stderr)?
+            );
+        }
+        let fs_type_name = String::from_utf8(output.stdout).unwrap();
+        log::debug!("Filesystem type: {}", fs_type_name);
+        if DENIED_FS_TYPES.contains(&fs_type_name.trim()) {
+            bail!("Denied filesystem type: {}", fs_type_name);
+        }
     }
-    let fs_type = String::from_utf8(output.stdout).unwrap();
-    log::debug!("Filesystem type: {}", fs_type);
-    if DENIED_FS_TYPES.contains(&fs_type.trim()) {
-        bail!("Denied filesystem type: {}", fs_type);
+    #[cfg(target_os = "macos")]
+    {
+        // use nix
+        let stat = nix::sys::statfs::statfs(args.dir.as_path())?;
+        let fs_type_name = stat.filesystem_type();
+        log::debug!("Filesystem type from nix: {:?}", fs_type_name);
+        log::debug!("Filesystem type: {}", fs_type_name);
+        if DENIED_FS_TYPES.contains(&fs_type_name.trim()) {
+            bail!("Denied filesystem type: {}", fs_type_name);
+        }
     }
 
     // Count files
