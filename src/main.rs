@@ -79,7 +79,7 @@ fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            log::debug!("{}", e);
+            log::info!("{}", e);
             ExitCode::FAILURE
         }
     }
