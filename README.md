@@ -8,10 +8,7 @@ I don't wanna `ls` when:
 `wanna_ls` is a command that returns `EXIT_FAILURE` when I don't wanna `ls`.
 
 # TODO
-- file counting
-  - [shell - Fast Linux file count for a large number of files - Stack Overflow](https://stackoverflow.com/questions/1427032/fast-linux-file-count-for-a-large-number-of-files)
 - config file
-- use statvfs
 
 # Examples
 Simple alias:

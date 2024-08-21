@@ -41,9 +41,9 @@ fn core() -> Result<()> {
             bail!("Denied filesystem type: {}", fs_type_name);
         }
     }
+
     #[cfg(target_os = "macos")]
     {
-        // use nix
         let stat = nix::sys::statfs::statfs(args.dir.as_path())?;
         let fs_type_name = stat.filesystem_type_name();
         log::debug!("Filesystem type: {}", fs_type_name);
@@ -54,7 +54,6 @@ fn core() -> Result<()> {
 
     // Count files
     let mut count = 0;
-    // use ReadDir
     let dir = std::fs::read_dir(args.dir)?;
     for entry in dir {
         let entry = entry?;
