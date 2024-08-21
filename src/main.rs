@@ -2,6 +2,7 @@ extern crate log;
 use anyhow::{bail, Result};
 use clap::{Parser, ValueHint};
 use libc::size_t;
+use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, process::ExitCode};
 
 /// Wanna ls?
@@ -12,13 +13,39 @@ struct Args {
     dir: PathBuf,
     #[arg(short, long, default_value = "32")]
     count: size_t,
+    /// Print default config and exit
+    #[arg(long)]
+    config: bool,
 }
 
-const DENIED_FS_TYPES: [&str; 3] = ["nfs", "cifs", "smb2"];
+#[derive(Serialize, Deserialize, Debug)]
+struct Config {
+    denied_fs_types: Vec<String>,
+    count: size_t,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            denied_fs_types: vec!["nfs".to_string(), "cifs".to_string(), "smb2".to_string()],
+            count: 32,
+        }
+    }
+}
 
 fn core() -> Result<()> {
     env_logger::init();
     let args = Args::parse();
+
+    if args.config {
+        let config = Config::default();
+        let config_str = toml::to_string_pretty(&config)?;
+        println!("{}", config_str);
+        return Ok(());
+    }
+
+    let config = Config::default();
+    let denied_fs_types: Vec<&str> = config.denied_fs_types.iter().map(|s| s.as_str()).collect();
 
     // Check filesystem type
     #[cfg(not(target_os = "macos"))]
@@ -37,7 +64,7 @@ fn core() -> Result<()> {
         }
         let fs_type_name = String::from_utf8(output.stdout).unwrap();
         log::debug!("Filesystem type: {}", fs_type_name);
-        if DENIED_FS_TYPES.contains(&fs_type_name.trim()) {
+        if denied_fs_types.contains(&fs_type_name.trim()) {
             bail!("Denied filesystem type: {}", fs_type_name);
         }
     }
@@ -47,7 +74,7 @@ fn core() -> Result<()> {
         let stat = nix::sys::statfs::statfs(args.dir.as_path())?;
         let fs_type_name = stat.filesystem_type_name();
         log::debug!("Filesystem type: {}", fs_type_name);
-        if DENIED_FS_TYPES.contains(&fs_type_name.trim()) {
+        if denied_fs_types.contains(&fs_type_name.trim()) {
             bail!("Denied filesystem type: {}", fs_type_name);
         }
     }
