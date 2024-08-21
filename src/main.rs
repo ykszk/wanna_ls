@@ -1,6 +1,8 @@
 extern crate log;
 use anyhow::{bail, Result};
 use clap::{Parser, ValueHint};
+use libc::size_t;
+use std::ffi;
 use std::{
     path::PathBuf,
     process::{Command, ExitCode},
@@ -12,6 +14,8 @@ use std::{
 struct Args {
     #[arg(default_value = ".", value_hint = ValueHint::DirPath)]
     dir: PathBuf,
+    #[arg(short, long, default_value = "32")]
+    count: size_t,
 }
 
 const DENIED_FS_TYPES: [&str; 3] = ["nfs", "cifs", "smb2"];
@@ -19,10 +23,12 @@ const DENIED_FS_TYPES: [&str; 3] = ["nfs", "cifs", "smb2"];
 fn core() -> Result<()> {
     env_logger::init();
     let args = Args::parse();
+
+    // Check filesystem type
     let output = Command::new("stat")
         .arg("--file-system")
         .arg("--format=%T")
-        .arg(args.dir)
+        .arg(args.dir.as_path())
         .output()
         .expect("failed to call `stat` command");
     if !output.status.success() {
@@ -36,6 +42,34 @@ fn core() -> Result<()> {
     if DENIED_FS_TYPES.contains(&fs_type.trim()) {
         bail!("Denied filesystem type: {}", fs_type);
     }
+
+    // Count files
+    let mut count = 0;
+    unsafe {
+        let dirname = ffi::CString::new(args.dir.to_str().unwrap()).unwrap();
+        let dir = libc::opendir(dirname.as_ptr());
+        if dir.is_null() {
+            bail!("Failed to open directory: {}", args.dir.display());
+        }
+        loop {
+            let entry = libc::readdir(dir);
+            if entry.is_null() {
+                break;
+            }
+            let entry = &*entry;
+            let name = ffi::CStr::from_ptr(entry.d_name.as_ptr());
+            let name = name.to_str().unwrap();
+            if name.starts_with('.') {
+                continue;
+            }
+            count += 1;
+        }
+    }
+    log::debug!("Number of files: {}", count);
+    if count > args.count {
+        bail!("Too many files: ({} > {})", count, args.count);
+    }
+
     Ok(())
 }
 
@@ -44,7 +78,7 @@ fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            log::debug!("Error: {}", e);
+            log::debug!("{}", e);
             ExitCode::FAILURE
         }
     }
