@@ -5,7 +5,7 @@ use libc::size_t;
 use std::ffi;
 use std::{
     path::PathBuf,
-    process::{Command, ExitCode},
+    process::ExitCode,
 };
 
 /// Wanna ls?
@@ -27,7 +27,7 @@ fn core() -> Result<()> {
     // Check filesystem type
     #[cfg(not(target_os = "macos"))]
     {
-        let output = Command::new("stat")
+        let output = process::Command::new("stat")
             .arg("--file-system")
             .arg("--format=%T")
             .arg(args.dir.as_path())
@@ -49,8 +49,7 @@ fn core() -> Result<()> {
     {
         // use nix
         let stat = nix::sys::statfs::statfs(args.dir.as_path())?;
-        let fs_type_name = stat.filesystem_type();
-        log::debug!("Filesystem type from nix: {:?}", fs_type_name);
+        let fs_type_name = stat.filesystem_type_name();
         log::debug!("Filesystem type: {}", fs_type_name);
         if DENIED_FS_TYPES.contains(&fs_type_name.trim()) {
             bail!("Denied filesystem type: {}", fs_type_name);
