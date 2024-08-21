@@ -2,11 +2,7 @@ extern crate log;
 use anyhow::{bail, Result};
 use clap::{Parser, ValueHint};
 use libc::size_t;
-use std::ffi;
-use std::{
-    path::PathBuf,
-    process::ExitCode,
-};
+use std::{path::PathBuf, process::ExitCode};
 
 /// Wanna ls?
 #[derive(Parser, Debug)]
@@ -27,7 +23,7 @@ fn core() -> Result<()> {
     // Check filesystem type
     #[cfg(not(target_os = "macos"))]
     {
-        let output = process::Command::new("stat")
+        let output = std::process::Command::new("stat")
             .arg("--file-system")
             .arg("--format=%T")
             .arg(args.dir.as_path())
@@ -58,26 +54,18 @@ fn core() -> Result<()> {
 
     // Count files
     let mut count = 0;
-    unsafe {
-        let dirname = ffi::CString::new(args.dir.to_str().unwrap()).unwrap();
-        let dir = libc::opendir(dirname.as_ptr());
-        if dir.is_null() {
-            bail!("Failed to open directory: {}", args.dir.display());
+    // use ReadDir
+    let dir = std::fs::read_dir(args.dir)?;
+    for entry in dir {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name = name.to_str().unwrap();
+        if name.starts_with('.') {
+            continue;
         }
-        loop {
-            let entry = libc::readdir(dir);
-            if entry.is_null() {
-                break;
-            }
-            let entry = &*entry;
-            let name = ffi::CStr::from_ptr(entry.d_name.as_ptr());
-            let name = name.to_str().unwrap();
-            if name.starts_with('.') {
-                continue;
-            }
-            count += 1;
-        }
+        count += 1;
     }
+
     log::debug!("Number of files: {}", count);
     if count > args.count {
         bail!("Too many files: ({} > {})", count, args.count);
