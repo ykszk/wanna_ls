@@ -1,7 +1,6 @@
 extern crate log;
 use anyhow::Result;
 use clap::{Parser, ValueHint};
-use libc::size_t;
 use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
@@ -15,16 +14,22 @@ struct Args {
     #[arg(default_value = ".", value_hint = ValueHint::DirPath)]
     dir: PathBuf,
     #[arg(short, long, default_value = "32")]
-    count: size_t,
+    count: usize,
     /// Print default config and exit
     #[arg(long)]
     default_config: bool,
+    /// Print file system type and exit
+    #[arg(long)]
+    filesystem: bool,
+    /// Print the number of entries and exit
+    #[arg(long)]
+    entries: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Config {
     denied_fs_types: Vec<String>,
-    too_many_entries: size_t,
+    too_many_entries: usize,
 }
 
 impl Default for Config {
@@ -70,6 +75,21 @@ fn get_config_file_path() -> Option<PathBuf> {
     })
 }
 
+fn count_entries(dir: &Path) -> Result<usize> {
+    let mut count = 0;
+    let dir = std::fs::read_dir(dir)?;
+    for entry in dir {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name = name.to_str().unwrap();
+        if name.starts_with('.') {
+            continue;
+        }
+        count += 1;
+    }
+    Ok(count)
+}
+
 const EXIT_FS_TYPE_DENIED: u8 = 2;
 
 fn core() -> Result<ExitCode> {
@@ -80,6 +100,18 @@ fn core() -> Result<ExitCode> {
         let config = Config::default();
         let config_str = toml::to_string_pretty(&config)?;
         println!("{config_str}");
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    if args.filesystem {
+        let fs_type_name = get_fs_type_name(args.dir.as_path())?;
+        println!("{fs_type_name}");
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    if args.entries {
+        let count = count_entries(args.dir.as_path())?;
+        println!("{count}");
         return Ok(ExitCode::SUCCESS);
     }
 
@@ -113,17 +145,7 @@ fn core() -> Result<ExitCode> {
     }
 
     // Count entries
-    let mut count = 0;
-    let dir = std::fs::read_dir(args.dir)?;
-    for entry in dir {
-        let entry = entry?;
-        let name = entry.file_name();
-        let name = name.to_str().unwrap();
-        if name.starts_with('.') {
-            continue;
-        }
-        count += 1;
-    }
+    let count = count_entries(args.dir.as_path())?;
 
     log::debug!("Number of entries: {}", count);
     if count > args.count {
@@ -141,7 +163,7 @@ fn main() -> ExitCode {
     match result {
         Ok(code) => code,
         Err(e) => {
-            log::error!("{}", e);
+            log::error!("{e}");
             ExitCode::FAILURE
         }
     }

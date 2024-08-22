@@ -1,4 +1,5 @@
 Wanna `ls`?
+===========
 
 I don't wanna `ls` when:
 
@@ -13,7 +14,7 @@ More specifically, return code will be:
 - `2`: Unallowed filesystem
 - `> 2`: Too many files with the code being the number of files
 
-# Examples
+## Examples
 ```bash
 cdls () {
     \cd "$@" && wanna_ls && ls
@@ -22,7 +23,7 @@ cdls () {
 
 See the command in action:
 ```bash
-wanna_ls && echo yes || echo no
+echo "Wanna ls?" && wanna_ls && echo yes || echo no
 ```
 
 Debug output:
@@ -30,17 +31,17 @@ Debug output:
 RUST_LOG=debug wanna_ls
 ```
 
-# Compatibility
+## Compatibility
 - linux: yes
 - macos: ?
 - windows: no
 
-# Installation
+## Installation
 ```bash
 cargo install cargo install --git https://github.com/ykszk/wanna_ls
 ```
 
-## Generate default configuration
+### Generate default configuration
 ```bash
 mkdir -p ~/.config/wanna_ls
 wanna_ls --default-config > ~/.config/wanna_ls/config.toml
