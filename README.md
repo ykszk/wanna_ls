@@ -3,42 +3,64 @@ Wanna `ls`?
 
 I don't wanna `ls` when:
 
-- the directory is on network storage because it can be slow.
-- the directory contains too many files because it can clutter the terminal.
+- I'm on network storage because it can be slow.
+- too many entries are in the directory because it can clutter the terminal.
 
 `wanna_ls` is a command that returns `EXIT_FAILURE` when I don't wanna `ls`.
 
 More specifically, return code will be:
-- `0`: No error, allowed filesystem type, and not too many files
+- `0`: No error, allowed filesystem type, and not too many entries
 - `1`: Generic error such as IO error
 - `2`: Unallowed filesystem
-- `> 2`: Too many files with the code being the number of files
+- `> 2`: Too many entries with the code being the number of entries
 
 ## Examples
+
+Checking filesystem type:
+```bash
+$ cd /mnt/usb
+$ wanna_ls && echo yes || echo no
+yes
+
+$ cd /mnt/nfs
+$ wanna_ls && echo yes || echo no
+no
+```
+
+Checking the number of entries:
+```bash
+$ cd /tmp
+$ wanna_ls && echo yes || echo no
+yes
+
+$ touch $(seq 1 100)
+$ wanna_ls && echo yes || echo no
+no
+```
+
+### Integration with `cd` and `ls`
+Bash
 ```bash
 cdls () {
     \cd "$@" && wanna_ls && ls
 }
 ```
 
-See the command in action:
-```bash
-echo "Wanna ls?" && wanna_ls && echo yes || echo no
+Fish
+```fish
+function cdls
+    builtin cd $argv[1]; and wanna_ls; and ls
+end
 ```
 
-Debug output:
+### Enable debug output
 ```bash
 RUST_LOG=debug wanna_ls
 ```
 
-## Compatibility
-- linux: yes
-- macos: ?
-- windows: no
-
 ## Installation
 ```bash
-cargo install cargo install --git https://github.com/ykszk/wanna_ls
+cargo install --git https://github.com/ykszk/wanna_ls
 ```
 
 ### Generate default configuration
@@ -46,3 +68,8 @@ cargo install cargo install --git https://github.com/ykszk/wanna_ls
 mkdir -p ~/.config/wanna_ls
 wanna_ls --default-config > ~/.config/wanna_ls/config.toml
 ```
+
+## Compatibility
+- linux: yes
+- macos: ?
+- windows: no
