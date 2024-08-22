@@ -18,20 +18,20 @@ struct Args {
     count: size_t,
     /// Print default config and exit
     #[arg(long)]
-    config: bool,
+    default_config: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Config {
     denied_fs_types: Vec<String>,
-    count: size_t,
+    too_many_entries: size_t,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
             denied_fs_types: vec!["nfs".to_string(), "cifs".to_string(), "smb2".to_string()],
-            count: 32,
+            too_many_entries: 16,
         }
     }
 }
@@ -61,20 +61,43 @@ fn get_fs_type_name(dir: &Path) -> Result<String> {
     Ok(fs_type_name)
 }
 
+fn get_config_file_path() -> Option<PathBuf> {
+    let home = dirs::home_dir();
+    home.map(|home| {
+        home.join(".config")
+            .join(env!("CARGO_PKG_NAME"))
+            .join("config.toml")
+    })
+}
+
 const EXIT_FS_TYPE_DENIED: u8 = 2;
 
 fn core() -> Result<ExitCode> {
     env_logger::init();
     let args = Args::parse();
 
-    if args.config {
+    if args.default_config {
         let config = Config::default();
         let config_str = toml::to_string_pretty(&config)?;
         println!("{config_str}");
         return Ok(ExitCode::SUCCESS);
     }
 
-    let config = Config::default();
+    let config_path = get_config_file_path();
+
+    let config = if let Some(config_path) = config_path {
+        if config_path.exists() {
+            log::debug!("Loading config from: {}", config_path.display());
+            let config_str = std::fs::read_to_string(config_path)?;
+            toml::from_str(&config_str)?
+        } else {
+            log::debug!("Config file not found: {}", config_path.display());
+            Config::default()
+        }
+    } else {
+        log::debug!("Home path not found");
+        Config::default()
+    };
 
     // Check filesystem type
     let fs_type_name = get_fs_type_name(args.dir.as_path())?;
@@ -89,7 +112,7 @@ fn core() -> Result<ExitCode> {
         return Ok(ExitCode::from(EXIT_FS_TYPE_DENIED));
     }
 
-    // Count files
+    // Count entries
     let mut count = 0;
     let dir = std::fs::read_dir(args.dir)?;
     for entry in dir {
@@ -102,9 +125,9 @@ fn core() -> Result<ExitCode> {
         count += 1;
     }
 
-    log::debug!("Number of files: {}", count);
+    log::debug!("Number of entries: {}", count);
     if count > args.count {
-        log::info!("Too many files: ({} > {})", count, args.count);
+        log::info!("Too many entries: ({} > {})", count, args.count);
         #[allow(clippy::cast_possible_truncation)]
         let err_code = std::cmp::min(count, u8::MAX as usize) as u8;
         return Ok(ExitCode::from(err_code));

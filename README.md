@@ -13,9 +13,6 @@ More specifically, return code will be:
 - `2`: Unallowed filesystem
 - `> 2`: Too many files with the code being the number of files
 
-# TODO
-- config file
-
 # Examples
 ```bash
 cdls () {
@@ -37,3 +34,14 @@ RUST_LOG=debug wanna_ls
 - linux: yes
 - macos: ?
 - windows: no
+
+# Installation
+```bash
+cargo install cargo install --git https://github.com/ykszk/wanna_ls
+```
+
+## Generate default configuration
+```bash
+mkdir -p ~/.config/wanna_ls
+wanna_ls --default-config > ~/.config/wanna_ls/config.toml
+```
