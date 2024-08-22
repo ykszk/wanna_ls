@@ -1,5 +1,6 @@
 Wanna `ls`?
 ===========
+![Build status](https://github.com/ykszk/wanna_ls/actions/workflows/rust.yml/badge.svg?branch=main)
 
 I don't wanna `ls` when:
 
