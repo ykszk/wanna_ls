@@ -13,8 +13,9 @@ use std::{
 struct Args {
     #[arg(default_value = ".", value_hint = ValueHint::DirPath)]
     dir: PathBuf,
-    #[arg(short, long, default_value = "32")]
-    count: usize,
+    /// Override the `too_many_entries` value in the config file
+    #[arg(short, long)]
+    count: Option<usize>,
     /// Print default config and exit
     #[arg(long)]
     default_config: bool,
@@ -146,10 +147,11 @@ fn core() -> Result<ExitCode> {
 
     // Count entries
     let count = count_entries(args.dir.as_path())?;
+    let too_many_entries = args.count.unwrap_or(config.too_many_entries);
 
     log::debug!("Number of entries: {}", count);
-    if count > args.count {
-        log::info!("Too many entries: ({} > {})", count, args.count);
+    if count > too_many_entries {
+        log::info!("Too many entries: ({} > {})", count, too_many_entries);
         #[allow(clippy::cast_possible_truncation)]
         let err_code = std::cmp::min(count, u8::MAX as usize) as u8;
         return Ok(ExitCode::from(err_code));
