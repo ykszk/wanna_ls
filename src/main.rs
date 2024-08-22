@@ -1,6 +1,7 @@
 extern crate log;
 use anyhow::Result;
-use clap::{Parser, ValueHint};
+use clap::{Command, CommandFactory, Parser, ValueHint};
+use clap_complete::{generate, Generator, Shell};
 use serde::{Deserialize, Serialize};
 use std::{
     path::{Path, PathBuf},
@@ -25,6 +26,9 @@ struct Args {
     /// Print the number of entries and exit
     #[arg(long)]
     entries: bool,
+    /// Print shell completions
+    #[arg(long, hide = true)]
+    completions: Option<Shell>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -91,11 +95,20 @@ fn count_entries(dir: &Path) -> Result<usize> {
     Ok(count)
 }
 
+fn print_completions<G: Generator>(gen: G, cmd: &mut Command) {
+    generate(gen, cmd, cmd.get_name().to_string(), &mut std::io::stdout());
+}
+
 const EXIT_FS_TYPE_DENIED: u8 = 2;
 
 fn core() -> Result<ExitCode> {
     env_logger::init();
     let args = Args::parse();
+
+    if let Some(shell) = args.completions {
+        print_completions(shell, &mut Args::command());
+        return Ok(ExitCode::SUCCESS);
+    }
 
     if args.default_config {
         let config = Config::default();

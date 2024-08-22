@@ -70,7 +70,13 @@ mkdir -p ~/.config/wanna_ls
 wanna_ls --default-config > ~/.config/wanna_ls/config.toml
 ```
 
+### Shell completions
+```bash
+wanna_ls --completions bash > ~/.config/bash_completion.d/wanna_ls
+wanna_ls --completions fish > ~/.config/fish/completions/wanna_ls.fish
+```
+
 ## Compatibility
-- linux: yes
-- macos: ?
+- linux: yes?
+- macos: yes?
 - windows: no
