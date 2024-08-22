@@ -62,9 +62,9 @@ fn get_fs_type_name(dir: &Path) -> Result<String> {
 
 #[cfg(target_os = "macos")]
 fn get_fs_type_name(dir: &Path) -> Result<String> {
-    let stat = nix::sys::statfs::statfs(args.dir.as_path())?;
+    let stat = nix::sys::statfs::statfs(dir)?;
     let fs_type_name = stat.filesystem_type_name();
-    Ok(fs_type_name)
+    Ok(fs_type_name.into())
 }
 
 fn get_config_file_path() -> Option<PathBuf> {
