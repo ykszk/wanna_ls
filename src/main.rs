@@ -40,8 +40,15 @@ struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            denied_fs_types: vec!["nfs".to_string(), "cifs".to_string(), "smb2".to_string()],
-            too_many_entries: 16,
+            denied_fs_types: vec![
+                "nfs".to_string(),
+                "cifs".to_string(),
+                "smb".to_string(),
+                "smb2".to_string(),
+                "smbfs".to_string(),
+                "webdav".to_string(),
+            ],
+            too_many_entries: 32,
         }
     }
 }
