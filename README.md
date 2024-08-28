@@ -4,7 +4,7 @@ Wanna `ls`?
 
 I don't wanna `ls` when:
 
-- it takes too long to list the directory because the filesystem is slow (e.g., NFS or Samba)
+- it takes too long to list the directory due to a network filesystem with high latency
 - too many entries are in the directory because it can clutter the terminal
 
 `wanna_ls` is a command that returns `EXIT_FAILURE` when I don't wanna `ls`.
@@ -23,7 +23,7 @@ max_entries = 32
 
 ## Examples
 
-Checking filesystem type:
+Checking time limit:
 ```bash
 $ cd /mnt/usb
 $ wanna_ls && echo yes || echo no
