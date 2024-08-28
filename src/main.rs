@@ -5,6 +5,7 @@ use clap_complete::{generate, Generator, Shell};
 use std::{
     path::{Path, PathBuf},
     process::ExitCode,
+    time::Duration,
 };
 
 /// Wanna ls?
@@ -27,22 +28,10 @@ struct Args {
     completions: Option<Shell>,
 }
 
-enum CountResult {
-    Count(usize),
-    TimeLimitExceeded(usize),
-}
-
-fn count_entries(dir: &Path, time_limit_ms: Option<u64>) -> Result<CountResult> {
+fn count_entries(dir: &Path) -> Result<usize> {
     let mut count = 0;
     let dir = std::fs::read_dir(dir)?;
-    let start = std::time::Instant::now();
-    let time_limit_ms = time_limit_ms.map(std::time::Duration::from_millis);
     for entry in dir {
-        if let Some(time_limit_ms) = time_limit_ms {
-            if start.elapsed() > time_limit_ms {
-                return Ok(CountResult::TimeLimitExceeded(count));
-            }
-        }
         let entry = entry?;
         let name = entry.file_name();
         let name = name.to_string_lossy();
@@ -51,7 +40,21 @@ fn count_entries(dir: &Path, time_limit_ms: Option<u64>) -> Result<CountResult> 
         }
         count += 1;
     }
-    Ok(CountResult::Count(count))
+    Ok(count)
+}
+
+async fn async_count_entries(dir: &Path) -> Result<usize> {
+    let mut count = 0;
+    let mut dir = tokio::fs::read_dir(dir).await?;
+    while let Some(entry) = dir.next_entry().await? {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with('.') {
+            continue;
+        }
+        count += 1;
+    }
+    Ok(count)
 }
 
 fn print_completions<G: Generator>(gen: G, cmd: &mut Command) {
@@ -60,7 +63,7 @@ fn print_completions<G: Generator>(gen: G, cmd: &mut Command) {
 
 const EXIT_TIME_LIMIT: u8 = 2;
 
-fn core() -> Result<ExitCode> {
+async fn core() -> Result<ExitCode> {
     env_logger::init();
     let args = Args::parse();
 
@@ -70,23 +73,15 @@ fn core() -> Result<ExitCode> {
     }
 
     if args.entries {
-        let count = count_entries(args.dir.as_path(), None)?;
-        match count {
-            CountResult::Count(count) => println!("{count}"),
-            CountResult::TimeLimitExceeded(count) => {
-                // should not happen
-                log::error!("Time limit exceeded: {}", count);
-                return Ok(ExitCode::from(EXIT_TIME_LIMIT));
-            }
-        }
+        let count = count_entries(args.dir.as_path())?;
+        println!("{count}");
         return Ok(ExitCode::SUCCESS);
     }
 
-    // Count entries
-    let count = count_entries(args.dir.as_path(), Some(args.time_limit_ms))?;
-
+    let time_limit = Duration::from_millis(args.time_limit_ms);
+    let count = tokio::time::timeout(time_limit, async_count_entries(args.dir.as_path())).await;
     match count {
-        CountResult::Count(count) => {
+        Ok(Ok(count)) => {
             log::debug!("Number of entries: {}", count);
             if count > args.max_entries {
                 log::info!("Too many entries: ({} > {})", count, args.max_entries);
@@ -95,21 +90,21 @@ fn core() -> Result<ExitCode> {
                 return Ok(ExitCode::from(err_code));
             }
         }
-        CountResult::TimeLimitExceeded(count) => {
-            log::info!(
-                "Time limit exceeded. Counted {} entries at {} ms/entry",
-                count,
-                args.time_limit_ms as f64 / count as f64
-            );
+        Ok(Err(e)) => {
+            log::error!("{e}");
+            return Ok(ExitCode::FAILURE);
+        }
+        Err(_) => {
+            log::info!("Time limit exceeded");
             return Ok(ExitCode::from(EXIT_TIME_LIMIT));
         }
-    }
-
+    };
     Ok(ExitCode::SUCCESS)
 }
 
-fn main() -> ExitCode {
-    let result = core();
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> ExitCode {
+    let result = core().await;
     match result {
         Ok(code) => code,
         Err(e) => {
