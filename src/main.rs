@@ -17,12 +17,12 @@ struct Args {
     /// Override the `too_many_entries` value in the config file
     #[arg(short, long)]
     count: Option<usize>,
+    /// Override the `time_limit_ms` value in the config file
+    #[arg(short, long)]
+    time_limit_ms: Option<u64>,
     /// Print default config and exit
     #[arg(long)]
     default_config: bool,
-    /// Print file system type and exit
-    #[arg(long)]
-    filesystem: bool,
     /// Print the number of entries and exit
     #[arg(long)]
     entries: bool,
@@ -33,49 +33,17 @@ struct Args {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Config {
-    denied_fs_types: Vec<String>,
+    time_limit_ms: u64,
     too_many_entries: usize,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
-            denied_fs_types: vec![
-                "nfs".to_string(),
-                "cifs".to_string(),
-                "smb".to_string(),
-                "smb2".to_string(),
-                "smbfs".to_string(),
-                "webdav".to_string(),
-            ],
+            time_limit_ms: 50,
             too_many_entries: 32,
         }
     }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn get_fs_type_name(dir: &Path) -> Result<String> {
-    let output = std::process::Command::new("stat")
-        .arg("--file-system")
-        .arg("--format=%T")
-        .arg(dir)
-        .output()
-        .expect("failed to call `stat` command");
-    if !output.status.success() {
-        anyhow::bail!(
-            "Failed to get filesystem type: {}",
-            String::from_utf8(output.stderr)?
-        );
-    }
-    let fs_type_name = String::from_utf8(output.stdout).unwrap();
-    Ok(fs_type_name)
-}
-
-#[cfg(target_os = "macos")]
-fn get_fs_type_name(dir: &Path) -> Result<String> {
-    let stat = nix::sys::statfs::statfs(dir)?;
-    let fs_type_name = stat.filesystem_type_name();
-    Ok(fs_type_name.into())
 }
 
 fn get_config_file_path() -> Option<PathBuf> {
@@ -87,26 +55,38 @@ fn get_config_file_path() -> Option<PathBuf> {
     })
 }
 
-fn count_entries(dir: &Path) -> Result<usize> {
+enum CountResult {
+    Count(usize),
+    TimeLimitExceeded(usize),
+}
+
+fn count_entries(dir: &Path, time_limit_ms: Option<u64>) -> Result<CountResult> {
     let mut count = 0;
     let dir = std::fs::read_dir(dir)?;
+    let start = std::time::Instant::now();
+    let time_limit_ms = time_limit_ms.map(std::time::Duration::from_millis);
     for entry in dir {
+        if let Some(time_limit_ms) = time_limit_ms {
+            if start.elapsed() > time_limit_ms {
+                return Ok(CountResult::TimeLimitExceeded(count));
+            }
+        }
         let entry = entry?;
         let name = entry.file_name();
-        let name = name.to_str().unwrap();
+        let name = name.to_string_lossy();
         if name.starts_with('.') {
             continue;
         }
         count += 1;
     }
-    Ok(count)
+    Ok(CountResult::Count(count))
 }
 
 fn print_completions<G: Generator>(gen: G, cmd: &mut Command) {
     generate(gen, cmd, cmd.get_name().to_string(), &mut std::io::stdout());
 }
 
-const EXIT_FS_TYPE_DENIED: u8 = 2;
+const EXIT_TIME_LIMIT: u8 = 2;
 
 fn core() -> Result<ExitCode> {
     env_logger::init();
@@ -124,15 +104,16 @@ fn core() -> Result<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     }
 
-    if args.filesystem {
-        let fs_type_name = get_fs_type_name(args.dir.as_path())?;
-        println!("{fs_type_name}");
-        return Ok(ExitCode::SUCCESS);
-    }
-
     if args.entries {
-        let count = count_entries(args.dir.as_path())?;
-        println!("{count}");
+        let count = count_entries(args.dir.as_path(), None)?;
+        match count {
+            CountResult::Count(count) => println!("{count}"),
+            CountResult::TimeLimitExceeded(count) => {
+                // should not happen
+                log::error!("Time limit exceeded: {}", count);
+                return Ok(ExitCode::from(1));
+            }
+        }
         return Ok(ExitCode::SUCCESS);
     }
 
@@ -151,31 +132,30 @@ fn core() -> Result<ExitCode> {
         log::debug!("Home path not found");
         Config::default()
     };
-
-    // Check filesystem type
-    let fs_type_name = get_fs_type_name(args.dir.as_path())?;
-    log::debug!("Filesystem type: {}", fs_type_name);
-    let denied_fs_types: Vec<&str> = config
-        .denied_fs_types
-        .iter()
-        .map(std::string::String::as_str)
-        .collect();
-    if denied_fs_types.contains(&fs_type_name.trim()) {
-        log::info!("Denied filesystem type: {}", fs_type_name);
-        return Ok(ExitCode::from(EXIT_FS_TYPE_DENIED));
-    }
+    let time_limit_ms = args.time_limit_ms.unwrap_or(config.time_limit_ms);
 
     // Count entries
-    let count = count_entries(args.dir.as_path())?;
-    let too_many_entries = args.count.unwrap_or(config.too_many_entries);
+    let count = count_entries(args.dir.as_path(), Some(time_limit_ms))?;
 
-    log::debug!("Number of entries: {}", count);
-    if count > too_many_entries {
-        log::info!("Too many entries: ({} > {})", count, too_many_entries);
-        #[allow(clippy::cast_possible_truncation)]
-        let err_code = std::cmp::min(count, u8::MAX as usize) as u8;
-        return Ok(ExitCode::from(err_code));
+    match count {
+        CountResult::Count(count) => {
+
+            let too_many_entries = args.count.unwrap_or(config.too_many_entries);
+
+            log::debug!("Number of entries: {}", count);
+            if count > too_many_entries {
+                log::info!("Too many entries: ({} > {})", count, too_many_entries);
+                #[allow(clippy::cast_possible_truncation)]
+                let err_code = std::cmp::max(std::cmp::min(count, u8::MAX as usize) as u8, 3);
+                return Ok(ExitCode::from(err_code));
+            }
+        }
+        CountResult::TimeLimitExceeded(count) => {
+            log::info!("Time limit exceeded. Counted {} entries at {} ms/entry", count, config.time_limit_ms as f64 / count as f64);
+            return Ok(ExitCode::from(EXIT_TIME_LIMIT));
+        }
     }
+
 
     Ok(ExitCode::SUCCESS)
 }

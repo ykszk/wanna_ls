@@ -4,16 +4,22 @@ Wanna `ls`?
 
 I don't wanna `ls` when:
 
-- I'm on network storage because it can be slow.
-- too many entries are in the directory because it can clutter the terminal.
+- it takes too long to list the directory because the filesystem is slow (e.g., NFS or Samba)
+- too many entries are in the directory because it can clutter the terminal
 
 `wanna_ls` is a command that returns `EXIT_FAILURE` when I don't wanna `ls`.
 
 More specifically, return code will be:
-- `0`: No error, allowed filesystem type, and not too many entries
+- `0`: No error, it is safe to `ls`
 - `1`: Generic error such as IO error
-- `2`: Unallowed filesystem
+- `2`: Time limit exceeded
 - `> 2`: Too many entries with the code being the number of entries
+
+Default configuration:
+```toml
+time_limit_ms = 50
+too_many_entries = 32
+```
 
 ## Examples
 
@@ -75,8 +81,3 @@ wanna_ls --default-config > ~/.config/wanna_ls/config.toml
 wanna_ls --completions bash > ~/.config/bash_completion.d/wanna_ls
 wanna_ls --completions fish > ~/.config/fish/completions/wanna_ls.fish
 ```
-
-## Compatibility
-- linux: yes?
-- macos: yes?
-- windows: no
