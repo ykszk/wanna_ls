@@ -18,7 +18,7 @@ More specifically, return code will be:
 Default configuration:
 ```toml
 time_limit_ms = 50
-too_many_entries = 32
+max_entries = 32
 ```
 
 ## Examples

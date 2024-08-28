@@ -10,11 +10,8 @@ repository = "https://github.com/ykszk/wanna_ls"
 anyhow = "1.0.86"
 clap = { version = "4.5.16", features = ["derive"] }
 clap_complete = "4.5.23"
-dirs = "5.0.1"
 env_logger = "0.11.5"
 log = "0.4.22"
-serde = { version = "1.0.209", features = ["derive"] }
-toml = "0.8.19"
 
 [profile.release]
 lto = true
