@@ -13,16 +13,16 @@ use std::{
 #[command(version, about, after_help = concat!("For more info, see ",  env!("CARGO_PKG_REPOSITORY")))]
 struct Args {
     #[arg(default_value = ".", value_hint = ValueHint::DirPath)]
-    dir: PathBuf,
+    dir: Vec<PathBuf>,
     /// Maximum number of entries
-    #[arg(short = 'c', long = "count", default_value = "32")]
+    #[arg(long = "max", default_value = "32")]
     max_entries: usize,
     /// Time limit in milliseconds
     #[arg(short, long, default_value = "50")]
     time_limit_ms: u64,
     /// Print the number of entries and exit
-    #[arg(long)]
-    entries: bool,
+    #[arg(short = 'n', long, alias = "entries")]
+    count: bool,
     /// Print shell completions
     #[arg(long, hide = true)]
     completions: Option<Shell>,
@@ -57,6 +57,28 @@ async fn async_count_entries(dir: &Path) -> Result<usize> {
     Ok(count)
 }
 
+async fn count_total_entries(dirs: Vec<PathBuf>, time_limit: Duration) -> Result<usize> {
+    let mut total_count = 0;
+    for dir in dirs {
+        let count = tokio::time::timeout(time_limit, async_count_entries(dir.as_path())).await;
+        match count {
+            Ok(Ok(count)) => {
+                total_count += count;
+            }
+            Ok(Err(e)) => {
+                log::error!("Error counting entries in {}: {}", dir.display(), e);
+            }
+            Err(_) => {
+                log::info!(
+                    "Time limit exceeded while counting entries in {}",
+                    dir.display()
+                );
+            }
+        }
+    }
+    Ok(total_count)
+}
+
 fn print_completions<G: Generator>(gen: G, cmd: &mut Command) {
     generate(gen, cmd, cmd.get_name().to_string(), &mut std::io::stdout());
 }
@@ -72,17 +94,46 @@ async fn core() -> Result<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     }
 
-    if args.entries {
-        let count = count_entries(args.dir.as_path())?;
-        println!("{count}");
-        return Ok(ExitCode::SUCCESS);
+    // remove files from args.dir
+    let dirs = args
+        .dir
+        .into_iter()
+        .filter(|d| {
+            if d.is_dir() {
+                true
+            } else {
+                log::warn!("Not a directory: {}", d.display());
+                false
+            }
+        })
+        .collect::<Vec<_>>();
+    if dirs.is_empty() {
+        log::error!("No valid directories provided");
+        return Ok(ExitCode::FAILURE);
+    }
+
+    if args.count {
+        if dirs.len() > 1 {
+            let mut total_count = 0;
+            for dir in &dirs {
+                let count = count_entries(dir.as_path())?;
+                total_count += count;
+                println!("{}: {count}", dir.display());
+            }
+            println!("Total: {total_count}");
+            return Ok(ExitCode::SUCCESS);
+        } else {
+            let count = count_entries(dirs[0].as_path())?;
+            println!("{count}");
+            return Ok(ExitCode::SUCCESS);
+        }
     }
 
     let time_limit = Duration::from_millis(args.time_limit_ms);
-    let count = tokio::time::timeout(time_limit, async_count_entries(args.dir.as_path())).await;
+    let count = tokio::time::timeout(time_limit, count_total_entries(dirs, time_limit)).await;
     match count {
         Ok(Ok(count)) => {
-            log::debug!("Number of entries: {}", count);
+            log::debug!("Number of entries: {count}");
             if count > args.max_entries {
                 log::info!("Too many entries: ({} > {})", count, args.max_entries);
                 #[allow(clippy::cast_possible_truncation)]
