@@ -42,22 +42,16 @@ async fn async_count_entries(dir: &Path) -> Result<usize> {
     Ok(count)
 }
 
-async fn count_total_entries(dirs: Vec<PathBuf>, time_limit: Duration) -> Result<usize> {
+async fn count_total_entries(dirs: Vec<PathBuf>) -> Result<usize> {
     let mut total_count = 0;
     for dir in dirs {
-        let count = tokio::time::timeout(time_limit, async_count_entries(dir.as_path())).await;
+        let count = async_count_entries(dir.as_path()).await;
         match count {
-            Ok(Ok(count)) => {
+            Ok(count) => {
                 total_count += count;
             }
-            Ok(Err(e)) => {
+            Err(e) => {
                 log::error!("Error counting entries in {}: {}", dir.display(), e);
-            }
-            Err(_) => {
-                log::info!(
-                    "Time limit exceeded while counting entries in {}",
-                    dir.display()
-                );
             }
         }
     }
@@ -134,7 +128,7 @@ async fn core() -> Result<ExitCode> {
     }
 
     let time_limit = Duration::from_millis(args.time_limit_ms);
-    let count = tokio::time::timeout(time_limit, count_total_entries(dirs, time_limit)).await;
+    let count = tokio::time::timeout(time_limit, count_total_entries(dirs)).await;
     match count {
         Ok(Ok(count)) => {
             log::debug!("Number of entries: {count}");
