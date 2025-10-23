@@ -28,21 +28,6 @@ struct Args {
     completions: Option<Shell>,
 }
 
-fn count_entries(dir: &Path) -> Result<usize> {
-    let mut count = 0;
-    let dir = std::fs::read_dir(dir)?;
-    for entry in dir {
-        let entry = entry?;
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name.starts_with('.') {
-            continue;
-        }
-        count += 1;
-    }
-    Ok(count)
-}
-
 async fn async_count_entries(dir: &Path) -> Result<usize> {
     let mut count = 0;
     let mut dir = tokio::fs::read_dir(dir).await?;
@@ -115,15 +100,34 @@ async fn core() -> Result<ExitCode> {
     if args.count {
         if dirs.len() > 1 {
             let mut total_count = 0;
-            for dir in &dirs {
-                let count = count_entries(dir.as_path())?;
-                total_count += count;
-                println!("{}: {count}", dir.display());
+            let mut handles = Vec::new();
+
+            for dir in dirs {
+                let handle =
+                    tokio::spawn(
+                        async move { (dir.clone(), async_count_entries(dir.as_path()).await) },
+                    );
+                handles.push(handle);
+            }
+
+            for handle in handles {
+                match handle.await {
+                    Ok((dir, Ok(count))) => {
+                        total_count += count;
+                        println!("{}: {count}", dir.display());
+                    }
+                    Ok((dir, Err(e))) => {
+                        log::error!("Error counting entries in {}: {}", dir.display(), e);
+                    }
+                    Err(e) => {
+                        log::error!("Task error: {}", e);
+                    }
+                }
             }
             println!("Total: {total_count}");
             return Ok(ExitCode::SUCCESS);
         } else {
-            let count = count_entries(dirs[0].as_path())?;
+            let count = async_count_entries(dirs[0].as_path()).await?;
             println!("{count}");
             return Ok(ExitCode::SUCCESS);
         }
